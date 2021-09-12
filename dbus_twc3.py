@@ -9,6 +9,7 @@ try:
   import gobject
 except ImportError:
   from gi.repository import GLib as gobject
+import argparse
 import platform
 import json
 import logging
@@ -27,18 +28,19 @@ from vedbus import VeDbusService
 
 log = logging.getLogger("DbusTWC3")
 
-_URL ='http://TeslaWallConnector.local/api/1'
-URL = _URL + '/vitals'
-LIFETIME = _URL + '/lifetime'
-VERSION = _URL + '/version'
 
 class DbusTWC3Service:
 
   def _version(self):
-    r = requests.get(url = VERSION, timeout=10)
+    r = requests.get(url = self.VERSION, timeout=10)
     return r.json() 
 
-  def __init__(self, servicename, deviceinstance, productname='Tesla Wall Connector 3', connection='ip'):
+  def __init__(self, servicename, deviceinstance, productname='Tesla Wall Connector 3', ip=None):
+    ip = ip or 'TeslaWallConnector.local'
+    url = 'http://' + ip + '/api/1'
+    self.URL = url + '/vitals'
+    self.LIFETIME = url + '/lifetime'
+    self.VERSION = url + '/version'
     v = self._version()
     self._lifetime()
     self._dbusservice = VeDbusService(servicename)
@@ -62,7 +64,7 @@ class DbusTWC3Service:
     # Create the management objects, as specified in the ccgx dbus-api document
     self._dbusservice.add_path('/Mgmt/ProcessName', __file__)
     self._dbusservice.add_path('/Mgmt/ProcessVersion', 'Unkown version, and running on Python ' + platform.python_version())
-    self._dbusservice.add_path('/Mgmt/Connection', connection)
+    self._dbusservice.add_path('/Mgmt/Connection', ip)
 
     # Create the mandatory objects
     self._dbusservice.add_path('/DeviceInstance', deviceinstance)
@@ -81,6 +83,7 @@ class DbusTWC3Service:
     self._dbusservice.add_path(
         '/StartStop', None, writeable=True, onchangecallback=self._startstop)
 
+    self._retries = 0
     gobject.timeout_add(5000, self._safe_update)
 
   def _setcurrent(self, path, value):
@@ -94,19 +97,25 @@ class DbusTWC3Service:
   def _safe_update(self):
     try:
         self._update()
+        if self._retries > 0:
+            self._dbusservice['/Connected'] = 1
+        self._retries = 0
     except Exception as e:
         log.error('Error running update %s' % e)
+        if self._retries == 0:
+            self._dbusservice['/Connected'] = 0
+        self._retries += 1
     return True
 
   def _lifetime(self):
-    r = requests.get(url = LIFETIME, timeout=10)
+    r = requests.get(url = self.LIFETIME, timeout=10)
     # Should really be lt = r.json(), but API is broken
     #lt = json.loads(r.content.replace('nan', 'null').decode(r.encoding))
     lt = json.loads(r.text.replace('nan', 'null'))
     return lt
 
   def _update(self):
-    r = requests.get(url = URL, timeout=10)
+    r = requests.get(url = self.URL, timeout=10)
     d = r.json() 
     lt = self._lifetime()
     ds = self._dbusservice
@@ -149,6 +158,13 @@ def main():
 
   log.info('Startup')
 
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--ip', help='IP Address of Station')
+  parser.add_argument('--service', help='Service Name, e.g. for test')
+  args = parser.parse_args()
+  if args.ip:
+      log.info('User supplied IP: %s' % args.ip)
+
   try:
     thread.daemon = True # allow the program to quit
   except NameError:
@@ -159,8 +175,9 @@ def main():
   DBusGMainLoop(set_as_default=True)
 
   pvac_output = DbusTWC3Service(
-    servicename='com.victronenergy.evcharger.twc3',
-    deviceinstance=42)
+    servicename=args.service or 'com.victronenergy.evcharger.twc3',
+    deviceinstance=42,
+    ip=args.ip)
 
   logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
   mainloop = gobject.MainLoop()
