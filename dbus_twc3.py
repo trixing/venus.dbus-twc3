@@ -246,7 +246,7 @@ def main():
 
   parser = argparse.ArgumentParser()
   parser.add_argument('--ip', help='IP Address of Station')
-  parser.add_argument('--service', help='Service Name, e.g. for test')
+  parser.add_argument('--service', default='com.victronenergy.evcharger.twc3', help='Service Name, e.g. for test')
   parser.add_argument('--instance', default=42, help='Instance on DBUS, will be incremented by 100 in dryrun mode')
   parser.add_argument('--dryrun', dest='dryrun', action='store_true')
   args = parser.parse_args()
@@ -263,7 +263,7 @@ def main():
   DBusGMainLoop(set_as_default=True)
 
   DbusTWC3Service(
-    servicename=args.service or ('com.victronenergy.evcharger.twc3' + '_dryrun' if args.dryrun else ''),
+    servicename=args.service + ('_dryrun' if args.dryrun else ''),
     deviceinstance=args.instance + (100 if args.dryrun else 0),
     ip=args.ip,
     dryrun=args.dryrun)
