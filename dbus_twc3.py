@@ -188,7 +188,7 @@ def main():
 
   parser = argparse.ArgumentParser()
   parser.add_argument('--ip', help='IP Address of Station')
-  parser.add_argument('--service', help='Service Name, e.g. for test')
+  parser.add_argument('--service', help='Service Name, e.g. for testing')
   parser.add_argument('--dryrun', dest='dryrun', action='store_true')
   args = parser.parse_args()
   if args.ip:
