@@ -21,6 +21,8 @@ try:
 except ImportError:
     pass
 
+import dbus
+
 # our own packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../ext/velib_python'))
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../velib_python'))
@@ -29,13 +31,29 @@ from vedbus import VeDbusService
 log = logging.getLogger("DbusTWC3")
 
 
+class SystemBus(dbus.bus.BusConnection):
+    def __new__(cls):
+        return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SYSTEM)
+
+class SessionBus(dbus.bus.BusConnection):
+    def __new__(cls):
+        return dbus.bus.BusConnection.__new__(cls, dbus.bus.BusConnection.TYPE_SESSION)
+
+
+def dbusconnection():
+    return SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else SystemBus()
+
+
+
 class DbusTWC3Service:
 
   def _version(self):
     r = requests.get(url = self.VERSION, timeout=10)
     return r.json() 
 
-  def __init__(self, servicename, deviceinstance, productname='Tesla Wall Connector 3', ip=None):
+  def __init__(self, servicename, deviceinstance,
+               productname='Tesla Wall Connector 3', ip=None,
+               dryrun=False):
     ip = ip or 'TeslaWallConnector.local'
     url = 'http://' + ip + '/api/1'
     self.URL = url + '/vitals'
@@ -91,10 +109,35 @@ class DbusTWC3Service:
     self._dbusservice.add_path(
         '/StartStop', None, writeable=True, onchangecallback=self._startstop)
 
+    self._tempservice = self.add_temp_service(deviceinstance, dryrun)
+
     self._retries = 0
     self._lifetime()
     gobject.timeout_add(5000, self._safe_update)
     gobject.timeout_add(60000, self._lifetime_update)
+
+  def add_temp_service(self, instance, dryrun):
+
+      ds = VeDbusService('com.victronenergy.temperature.twc3' + ('_dryrun' if dryrun else ''),
+                         bus=dbusconnection())
+      # Create the management objects, as specified in the ccgx dbus-api document
+      ds.add_path('/Mgmt/ProcessName', __file__)
+      ds.add_path('/Mgmt/ProcessVersion', 'Unkown version, and running on Python ' + platform.python_version())
+      ds.add_path('/Mgmt/Connection', 'local')
+
+      # Create the mandatory objects
+      ds.add_path('/DeviceInstance', instance + (100 if dryrun else 0))
+      ds.add_path('/ProductId', 0)
+      ds.add_path('/ProductName', 'dbus-twc3')
+      ds.add_path('/FirmwareVersion', 0)
+      ds.add_path('/HardwareVersion', 0)
+      ds.add_path('/Connected', 1)
+
+      ds.add_path('/CustomName', 'TWC3')
+      ds.add_path('/TemperatureType', 2)  # 0=battery, 1=fridge, 2=generic
+      ds.add_path('/Temperature', 0)
+      ds.add_path('/Status', 0)  # 0=ok, 1=disconnected, 2=short circuit
+      return ds
 
   def _setcurrent(self, path, value):
       print('Unimplemented', path, value)
@@ -121,6 +164,8 @@ class DbusTWC3Service:
         log.error('Error running update %s' % e)
         if self._retries == 0:
             self._dbusservice['/Connected'] = 0
+            self._tempservice['/CustomName'] = 'TWC3 Error'
+            self._tempservice['/Temperature'] = -1
         self._retries += 1
     return True
 
@@ -168,6 +213,19 @@ class DbusTWC3Service:
     ds['/Status'] = state
     ds['/Mode'] = 0 # Manual, no control
     ds['/StartStop'] = 1 # Always on
+
+        # Update "fake" display through temperature monitors
+    if state == 2:
+        twc_power = ds['/Ac/Power']
+        self._tempservice['/CustomName'] = 'TWC3 Charging [kW]'
+        self._tempservice['/Temperature'] = round(twc_power/1000.0, 1)
+    elif state == 1:
+        self._tempservice['/CustomName'] = 'TWC3 Car Connected'
+        self._tempservice['/Temperature'] = 0.0
+    else:
+        self._tempservice['/CustomName'] = 'TWC3 Idle'
+        self._tempservice['/Temperature'] = 0.0
+
     log.info("Car Consumption: %s, State: %s" % (ds['/Ac/Power'], ds['/Status']))
     return d
 
@@ -189,6 +247,7 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--ip', help='IP Address of Station')
   parser.add_argument('--service', help='Service Name, e.g. for test')
+  parser.add_argument('--instance', default=42, help='Instance on DBUS, will be incremented by 100 in dryrun mode')
   parser.add_argument('--dryrun', dest='dryrun', action='store_true')
   args = parser.parse_args()
   if args.ip:
@@ -205,8 +264,9 @@ def main():
 
   DbusTWC3Service(
     servicename=args.service or ('com.victronenergy.evcharger.twc3' + '_dryrun' if args.dryrun else ''),
-    deviceinstance=42 + (100 if args.dryrun else 0),
-    ip=args.ip)
+    deviceinstance=args.instance + (100 if args.dryrun else 0),
+    ip=args.ip,
+    dryrun=args.dryrun)
 
   logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
   mainloop = gobject.MainLoop()
