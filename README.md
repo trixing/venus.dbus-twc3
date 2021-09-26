@@ -4,9 +4,16 @@ This program regularly polls a Tesla Wall Connector 3 on the
 local network and creates a dbus device for an AC charging
 station.
 
-The charging station will only show up in the GX remote
+The charging station will only show up properly in the GX remote
 control window as no visualization is provided by Victron in
 the VRM portal.
+
+To still show the status the driver creates a secondary
+temperature device which is used to communiate the state of
+the wallbox.
+
+There is no control logic part of this driver. This is just
+providing the data on the dbus.
 
 ## Installation (Supervise)
 
@@ -40,4 +47,4 @@ ln -s /data/venus.dbus-twc3/service /service/venus.dbus-twc3
 
 ## Possible improvements
 
-- [ ] Show Charging Status in the VRM UI.
+- [ ] Allow for control of charging once Tesla adds an API for this.
