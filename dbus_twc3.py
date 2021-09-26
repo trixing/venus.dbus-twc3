@@ -52,8 +52,10 @@ class DbusTWC3Service:
     return r.json() 
 
   def __init__(self, servicename, deviceinstance,
-               productname='Tesla Wall Connector 3', ip=None,
+               productname='Tesla Wall Connector 3', name='TWC3',
+               ip=None,
                dryrun=False):
+    self._name = name
     ip = ip or 'TeslaWallConnector.local'
     url = 'http://' + ip + '/api/1'
     self.URL = url + '/vitals'
@@ -133,7 +135,7 @@ class DbusTWC3Service:
       ds.add_path('/HardwareVersion', 0)
       ds.add_path('/Connected', 1)
 
-      ds.add_path('/CustomName', 'TWC3')
+      ds.add_path('/CustomName', self._name)
       ds.add_path('/TemperatureType', 2)  # 0=battery, 1=fridge, 2=generic
       ds.add_path('/Temperature', 0)
       ds.add_path('/Status', 0)  # 0=ok, 1=disconnected, 2=short circuit
@@ -164,7 +166,7 @@ class DbusTWC3Service:
         log.error('Error running update %s' % e)
         if self._retries == 0:
             self._dbusservice['/Connected'] = 0
-            self._tempservice['/CustomName'] = 'TWC3 Error'
+            self._tempservice['/CustomName'] = self._name + ' Error'
             self._tempservice['/Temperature'] = -1
         self._retries += 1
     return True
@@ -217,14 +219,14 @@ class DbusTWC3Service:
         # Update "fake" display through temperature monitors
     if state == 2:
         twc_power = ds['/Ac/Power']
-        self._tempservice['/CustomName'] = 'TWC3 Charging [kW]'
+        self._tempservice['/CustomName'] = self._name + ' Charging [kW]'
         self._tempservice['/Temperature'] = round(twc_power/1000.0, 1)
     elif state == 1:
-        self._tempservice['/CustomName'] = 'TWC3 Car Connected'
-        self._tempservice['/Temperature'] = 0.0
+        self._tempservice['/CustomName'] = self._name + ' Car Connected [A]'
+        self._tempservice['/Temperature'] = ds['/SetCurrent']
     else:
-        self._tempservice['/CustomName'] = 'TWC3 Idle'
-        self._tempservice['/Temperature'] = 0.0
+        self._tempservice['/CustomName'] = self._name + ' Idle [A]'
+        self._tempservice['/Temperature'] = ds['/SetCurrent']
 
     log.info("Car Consumption: %s, State: %s" % (ds['/Ac/Power'], ds['/Status']))
     return d
@@ -245,10 +247,11 @@ def main():
   log.info('Startup')
 
   parser = argparse.ArgumentParser()
-  parser.add_argument('--ip', help='IP Address of Station')
+  parser.add_argument('--ip', default='TeslaWallConnector.local', help='IP Address of Station')
   parser.add_argument('--service', default='com.victronenergy.evcharger.twc3', help='Service Name, e.g. for testing')
   parser.add_argument('--instance', default=42, help='Instance on DBUS, will be incremented by 100 in dryrun mode')
   parser.add_argument('--dryrun', dest='dryrun', action='store_true')
+  parser.add_argument('--name', default='TWC3', help='User visible name of Wallbox')
   args = parser.parse_args()
   if args.ip:
       log.info('User supplied IP: %s' % args.ip)
@@ -266,6 +269,7 @@ def main():
     servicename=args.service + ('_dryrun' if args.dryrun else ''),
     deviceinstance=args.instance + (100 if args.dryrun else 0),
     ip=args.ip,
+    name=args.name,
     dryrun=args.dryrun)
 
   logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
