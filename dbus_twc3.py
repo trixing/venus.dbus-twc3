@@ -76,6 +76,8 @@ class DbusTWC3Service:
       '/MaxCurrent',
       '/Mode',
       '/ChargingTime',
+      '/PCB/Temperature',
+      '/MCU/Temperature',
       '/History/ChargingCycles',
       '/History/ConnectorCycles',
       '/History/Ac/Energy/Forward',
@@ -101,6 +103,8 @@ class DbusTWC3Service:
     self._dbusservice.add_path('/FirmwareVersion', v['firmware_version'])
     self._dbusservice.add_path('/HardwareVersion', v['part_number'])
     self._dbusservice.add_path('/Connected', 1)
+
+    self._dbusservice.add_path('/CustomName', 'Tesla Charger')
 
 
     for path in paths:
@@ -215,6 +219,8 @@ class DbusTWC3Service:
     ds['/Status'] = state
     ds['/Mode'] = 0 # Manual, no control
     ds['/StartStop'] = 1 # Always on
+    ds['/MCU/Temperature'] = d['mcu_temp_c']
+    ds['/PCB/Temperature'] = d['pcba_temp_c']
 
         # Update "fake" display through temperature monitors
     if state == 2:
