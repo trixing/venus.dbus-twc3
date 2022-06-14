@@ -16,6 +16,7 @@ import logging
 import sys
 import os
 import requests # for http GET
+import time
 try:
     import thread   # for daemon = True
 except ImportError:
@@ -271,14 +272,20 @@ def main():
   # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
   DBusGMainLoop(set_as_default=True)
 
-  DbusTWC3Service(
-    servicename=args.service + ('_dryrun' if args.dryrun else ''),
-    deviceinstance=args.instance + (100 if args.dryrun else 0),
-    ip=args.ip,
-    name=args.name,
-    dryrun=args.dryrun)
+  for ip in args.ip.split(','):
+    try:
+      DbusTWC3Service(
+        servicename=args.service + ('_dryrun' if args.dryrun else ''),
+        deviceinstance=args.instance + (100 if args.dryrun else 0),
+        ip=ip,
+        name=args.name,
+        dryrun=args.dryrun)
+      break
+    except requests.exceptions.ConnectionError:
+        log.info("Failed to connect to TWC3 on ip %s" % ip)
+        time.sleep(1)
 
-  logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
+  log.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
   mainloop = gobject.MainLoop()
   mainloop.run()
 

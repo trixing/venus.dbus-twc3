@@ -1,3 +1,3 @@
 #!/bin/sh
-python3 /data/dbus-twc3/dbus_twc3.py
+python3 /data/dbus-twc3/dbus_twc3.py --ip=TeslaWallConnector_8CF54B.local,192.168.2.225,192.168.2.131
 
