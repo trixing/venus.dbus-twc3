@@ -26,6 +26,7 @@ import dbus
 # our own packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../ext/velib_python'))
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../velib_python'))
+sys.path.insert(1, os.path.join(os.path.dirname(__file__), '/opt/victronenergy/dbus-systemcalc-py/ext/velib_python'))
 from vedbus import VeDbusService
 
 log = logging.getLogger("DbusTWC3")
