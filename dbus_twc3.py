@@ -16,6 +16,7 @@ import logging
 import sys
 import os
 import requests # for http GET
+import time
 try:
     import thread   # for daemon = True
 except ImportError:
@@ -79,6 +80,7 @@ class DbusTWC3Service:
       '/ChargingTime',
       '/PCB/Temperature',
       '/MCU/Temperature',
+      '/Handle/Temperature',
       '/History/ChargingCycles',
       '/History/ConnectorCycles',
       '/History/Ac/Energy/Forward',
@@ -199,17 +201,17 @@ class DbusTWC3Service:
     d = r.json() 
     lt = self._lifetime()
     ds = self._dbusservice
-    ds['/Ac/L1/Power'] = float(d['currentA_a']) * float(d['voltageA_v'])
-    ds['/Ac/L2/Power'] = float(d['currentB_a']) * float(d['voltageB_v'])
-    ds['/Ac/L3/Power'] = float(d['currentC_a']) * float(d['voltageC_v'])
-    ds['/Ac/Power'] = ds['/Ac/L1/Power'] + ds['/Ac/L2/Power'] + ds['/Ac/L3/Power']
-    ds['/Ac/Frequency'] = d['grid_hz']
-    ds['/Ac/Voltage'] = d['grid_v']
-    ds['/Current'] = d['vehicle_current_a']
+    ds['/Ac/L1/Power'] = round(float(d['currentA_a']) * float(d['voltageA_v']))
+    ds['/Ac/L2/Power'] = round(float(d['currentB_a']) * float(d['voltageB_v']))
+    ds['/Ac/L3/Power'] = round(float(d['currentC_a']) * float(d['voltageC_v']))
+    ds['/Ac/Power'] = round(ds['/Ac/L1/Power'] + ds['/Ac/L2/Power'] + ds['/Ac/L3/Power'])
+    ds['/Ac/Frequency'] = round(d['grid_hz'], 1)
+    ds['/Ac/Voltage'] = round(d['grid_v'])
+    ds['/Current'] = round(d['vehicle_current_a'], 1)
     ds['/SetCurrent'] = 16  # static for now
     ds['/MaxCurrent'] = 16  # d['vehicle_current_a']
     # ds['/Ac/Energy/Forward'] = float(d['session_energy_wh']) / 1000.0
-    ds['/Ac/Energy/Forward'] = float(lt['energy_wh']) / 1000.0
+    ds['/Ac/Energy/Forward'] = round(float(lt['energy_wh']) / 1000.0, 3)
     ds['/ChargingTime'] = d['session_s']
 
     state = 0 # disconnected
@@ -222,16 +224,21 @@ class DbusTWC3Service:
     ds['/StartStop'] = 1 # Always on
     ds['/MCU/Temperature'] = d['mcu_temp_c']
     ds['/PCB/Temperature'] = d['pcba_temp_c']
+    ds['/Handle/Temperature'] = d['handle_temp_c']
 
         # Update "fake" display through temperature monitors
-    if state == 2:
+    if True:
+      self._tempservice['/CustomName'] = self._name + ' Handle'
+      self._tempservice['/Temperature'] = round(d['handle_temp_c'], 1)
+    else:
+      if state == 2:
         twc_power = ds['/Ac/Power']
         self._tempservice['/CustomName'] = self._name + ' Charging [kW]'
         self._tempservice['/Temperature'] = round(twc_power/1000.0, 1)
-    elif state == 1:
+      elif state == 1:
         self._tempservice['/CustomName'] = self._name + ' Car Connected [A]'
         self._tempservice['/Temperature'] = ds['/SetCurrent']
-    else:
+      else:
         self._tempservice['/CustomName'] = self._name + ' Idle [A]'
         self._tempservice['/Temperature'] = ds['/SetCurrent']
 
@@ -272,14 +279,21 @@ def main():
   # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
   DBusGMainLoop(set_as_default=True)
 
-  DbusTWC3Service(
-    servicename=args.service + ('_dryrun' if args.dryrun else ''),
-    deviceinstance=args.instance + (100 if args.dryrun else 0),
-    ip=args.ip,
-    name=args.name,
-    dryrun=args.dryrun)
+  for ip in args.ip.split(','):
+    try:
+      DbusTWC3Service(
+        servicename=args.service + ('_dryrun' if args.dryrun else ''),
+        deviceinstance=args.instance + (100 if args.dryrun else 0),
+        ip=ip,
+        name=args.name,
+        dryrun=args.dryrun)
+      log.info("Connected to TWC3 on ip %s" % ip)
+      break
+    except requests.exceptions.ConnectionError:
+        log.info("Failed to connect to TWC3 on ip %s" % ip)
+        time.sleep(1)
 
-  logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
+  log.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
   mainloop = gobject.MainLoop()
   mainloop.run()
 
